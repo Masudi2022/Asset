@@ -20,7 +20,6 @@ class Division(models.Model):
     def __str__(self):
         return f'{self.name}'
 
-
 class Asset(models.Model):
     CATEGORY = [
         ("COMP", "Computer"),
@@ -49,7 +48,7 @@ class Asset(models.Model):
     image = models.ImageField(upload_to='images/', null=True, blank=True)
     issue = models.ForeignKey('Division', on_delete=models.CASCADE, related_name="issued_to_division")
     asset_number = models.CharField(max_length=50, blank=True, unique=True)
-    status = models.CharField(max_length=1, choices=STATUS, default="A")
+    asset_status = models.CharField(max_length=1, choices=STATUS, default="A")
     depreciation = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)  # Depreciation amount
     useful_life = models.IntegerField(default=5)  # Useful life in years, default is 5 years
 
@@ -68,35 +67,35 @@ class Asset(models.Model):
 
     def save(self, *args, **kwargs):
         if not self.asset_number:
-            # Generate the division code from the first two letters of the division name
-            if " " in self.issue.name:
-                div = self.issue.name.split()
-                division_code = ''.join([word[0].upper() for word in div[:3]])
-            else:
-                division_code = self.issue.name[:2].upper()
+            # Check if the issue (Division) is set before trying to access it
+            if self.issue and self.issue.name:
+                # Generate the division code from the first two letters of the division name
+                if " " in self.issue.name:
+                    div = self.issue.name.split()
+                    division_code = ''.join([word[0].upper() for word in div[:3]])
+                else:
+                    division_code = self.issue.name[:2].upper()
 
-            # Generate the category code
-            category_code = self.category[:4].upper()
+                # Generate the category code
+                category_code = self.category[:4].upper()
 
-            # Calculate the next sequence number
-            last_asset = Asset.objects.filter(issue=self.issue, category=self.category).order_by('id').last()
-            next_sequence = 1
-            if last_asset and last_asset.asset_number:
-                last_sequence = int(last_asset.asset_number.split('/')[-1])
-                next_sequence = last_sequence + 1
+                # Calculate the next sequence number
+                last_asset = Asset.objects.filter(issue=self.issue, category=self.category).order_by('id').last()
+                next_sequence = 1
+                if last_asset and last_asset.asset_number:
+                    last_sequence = int(last_asset.asset_number.split('/')[-1])
+                    next_sequence = last_sequence + 1
 
-            # Format the asset number as Division/Category/Sequence
-            self.asset_number = f'MKS/U/{category_code}/{division_code}/{next_sequence}'
+                # Format the asset number as Division/Category/Sequence
+                self.asset_number = f'MKS/U/{category_code}/{division_code}/{next_sequence}'
 
         self.depreciation = self.calculate_depreciation()
         super(Asset, self).save(*args, **kwargs)
         self.evaluate_status()  # Call evaluate_status after saving to avoid recursion
 
     def evaluate_status(self):
-        # Calculate 90 minutes ago from now
         ninety_minutes_ago = timezone.now() - timedelta(days=90)
 
-        # Check if Received_date exists and if the asset's status needs to be updated
         if self.Received_date and self.Received_date < ninety_minutes_ago and self.status == "A":
             self.status = "B"  # Change status to 'Need Troubleshoot'
             self.save(update_fields=['status'])  # Update only the status field to avoid recursion
